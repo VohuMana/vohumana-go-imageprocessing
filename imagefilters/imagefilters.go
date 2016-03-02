@@ -24,8 +24,6 @@ func (h HSL) RGBA() (r, g, b, a uint32) {
 	return h.H, h.S, h.L, 0
 }
 
-var HSLModel color.Model = color.ModelFunc(rgbToHSL)
-
 func init() {
 	// Package init stuff here
 }
@@ -38,9 +36,7 @@ func threewayMin(a, b, c float64) float64 {
 	return math.Min(math.Min(a, b), math.Min(b, c))
 }
 
-func rgbToHSL(c color.Color) color.Color {
-	r, g, b, _ := c.RGBA()
-	
+func rgbToHSL(r, g, b uint32) (float64, float64, float64) {	
 	// Get rgb values from 0.0 to 1.0f
 	redNormalized := float64(r) / float64(math.MaxUint16)
 	greenNormailzed := float64(g) / float64(math.MaxUint16)
@@ -68,35 +64,37 @@ func rgbToHSL(c color.Color) color.Color {
 		}
 
 		if (max == redNormalized) {
-			h = greenNormailzed - blueNormalized
+			h = (greenNormailzed - blueNormalized) / d
 
 			if (greenNormailzed < blueNormalized) {
-				h /= (d + 6.0)
-			} else {
-				h /= d
+				h += 6.0
 			}
 		} else if (max == greenNormailzed) {
-			h = (blueNormalized - redNormalized) / (d + 2.0)
+			h = ((blueNormalized - redNormalized) / d) + 2.0
 		} else {
-			h = (redNormalized - greenNormailzed) / (d + 4.0)
+			h = ((redNormalized - greenNormailzed) / d) + 4.0
 		}
 
 		h /= 6.0
 	}
 
+
 	// Convert to uint32 to conform to the go RGBA uint32 color model
-	H := uint32(h * math.MaxUint32)
-	S := uint32(s * math.MaxUint32)
-	L := uint32(l * math.MaxUint32)
-	return HSL{H, S, L}
+	// H := uint32(h * math.MaxUint32)
+	// S := uint32(s * math.MaxUint32)
+	// L := uint32(l * math.MaxUint32)
+
+	// fmt.Printf("RGBTOHSL - R: %v G: %v B: %v H: %v S: %v L: %v\n", uint8(redNormalized * math.MaxUint8), uint8(greenNormailzed * math.MaxUint8), uint8(blueNormalized * math.MaxUint8), h, s, l)
+	
+	return h,s,l//HSL{H, S, L}
 }
 
-func hslToRGB(c color.Color) color.Color {
-	H, S, L, _ := c.RGBA()
+func hslToRGB(h, s, l float64) (uint8, uint8, uint8) {
+	// H, S, L, _ := c.RGBA()
 
-	h := float64(H) / float64(math.MaxUint32)
-	s := float64(S) / float64(math.MaxUint32)
-	l := float64(L) / float64(math.MaxUint32)
+	// h := float64(H) / float64(math.MaxUint32)
+	// s := float64(S) / float64(math.MaxUint32)
+	// l := float64(L) / float64(math.MaxUint32)
 
 	var r, g, b float64
 	if (s == 0.0) {
@@ -123,7 +121,9 @@ func hslToRGB(c color.Color) color.Color {
 	G := uint8(g * math.MaxUint8)
 	B := uint8(b * math.MaxUint8)
 
-	return color.RGBA{R, G, B, math.MaxUint8}
+	// fmt.Printf("HSLTORGB - R: %v G: %v B: %v H: %v S: %v L: %v\n\n", R, G, B, h, s, l)
+
+	return R, G, B //color.RGBA{R, G, B, math.MaxUint8}
 }
 
 func hueToRGB(p, q, t float64) float64 {
@@ -134,7 +134,7 @@ func hueToRGB(p, q, t float64) float64 {
 	if (t > 1.0) {
 		t -= 1.0
 	}
-
+	// fmt.Printf("HUETORGB - P: %v Q: %v T: %v\n", p, q, t)
 	if (t < (1.0 / 6.0)) {
 		return p + (q - p) * 6.0 * t
 	} else if (t < (1.0 / 2.0)) {
@@ -174,12 +174,14 @@ func (f HistogramEqualizationFilter) Apply(img image.Image) image.Image {
 	b := img.Bounds()
 	for y := b.Min.Y; y < b.Max.Y; y++ {
 		for x := b.Min.X; x < b.Max.X; x++ {
-			_, _, L, _ := rgbToHSL(img.At(x, y)).RGBA()
-			newL := uint8((float64(L) / float64(math.MaxUint32)) * math.MaxUint8)
+			r, g, b, _ := img.At(x, y).RGBA()
+			_, _, L := rgbToHSL(r, g, b)
+			newL := uint8(L * float64(math.MaxUint8))
 			histogram[newL]++
 			// fmt.Printf("H: %v S: %v L: %v\n", H, S, L)
 		}
 	}
+	fmt.Println("Histogram calculated")
 
 	var normailzedChannel [256]float64
 	totalPixels := b.Max.X * b.Max.Y
@@ -203,14 +205,14 @@ func (f HistogramEqualizationFilter) Apply(img image.Image) image.Image {
 
 	for y := b.Min.Y; y < b.Max.Y; y++ {
 		for x := b.Min.X; x < b.Max.X; x++ {
-			H, S, L, _ := rgbToHSL(img.At(x, y)).RGBA()
-			newL := uint8((float64(L) / float64(math.MaxUint32)) * math.MaxUint8)
-			L = uint32((float64(newValues[newL]) / float64(math.MaxUint8)) * math.MaxUint32)
-			normalizedImage.Set(x, y, hslToRGB(HSL{H,S,L})) 
+			r, g, b, _ := img.At(x, y).RGBA()
+			H, S, L := rgbToHSL(r, g, b)
+			newL := uint8(L * float64(math.MaxUint8))
+			L = (float64(newValues[newL]) / float64(math.MaxUint8))
+			R, G, B := hslToRGB(H, S, L)
+			normalizedImage.Set(x, y, color.RGBA{R, G, B, math.MaxUint8}) 
 		}
 	}
-
-	fmt.Println("Applying HistogramEqualizationFilter")
 
 	return normalizedImage
 }
