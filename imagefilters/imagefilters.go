@@ -12,6 +12,7 @@ var ImageFilterMap = map[string]ImageFilter {
 	"ExtractGreenChannel": ExtractGreenChannelFilter{},
 	"ExtractBlueChannel": ExtractBlueChannelFilter{},
 	"HistogramNormalization": HistogramEqualizationFilter{},
+	"FindEdgesWithSobel": SobelImageFilter{},
 }
 
 // COLOR FUNCTIONS
@@ -165,6 +166,9 @@ type ExtractGreenChannelFilter struct {
 type ExtractBlueChannelFilter struct {
 }
 
+type SobelImageFilter struct {
+}
+
 func (f HistogramEqualizationFilter) Apply(img image.Image) image.Image {
 	normalizedImage := image.NewRGBA(img.Bounds())
 
@@ -260,4 +264,8 @@ func (f ExtractBlueChannelFilter) Apply(img image.Image) image.Image {
 	}
 
 	return blueChannel
+}
+
+func (f SobelImageFilter) Apply(img image.Image) image.Image {
+	return img
 }
