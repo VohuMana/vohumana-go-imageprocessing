@@ -13,8 +13,13 @@ var ImageFilterMap = map[string]ImageFilter {
 	"ExtractBlueChannel": ExtractBlueChannelFilter{},
 	"HistogramNormalization": HistogramEqualizationFilter{},
 	"FindEdgesWithSobel": SobelImageFilter{},
+    "ConvertToGrayscale": ConvertToGrayscale{},
 }
 
+
+func convertUint32ToUint16(in uint32) uint16 {
+    return uint16((float64(in) / float64(math.MaxUint32)) * math.MaxUint16)
+}
 // COLOR FUNCTIONS
 
 type HSL struct {
@@ -85,12 +90,12 @@ func rgbToHSL(r, g, b uint32) (float64, float64, float64) {
 	// S := uint32(s * math.MaxUint32)
 	// L := uint32(l * math.MaxUint32)
 
-	// fmt.Printf("RGBTOHSL - R: %v G: %v B: %v H: %v S: %v L: %v\n", uint8(redNormalized * math.MaxUint8), uint8(greenNormailzed * math.MaxUint8), uint8(blueNormalized * math.MaxUint8), h, s, l)
+	// fmt.Printf("RGBTOHSL - R: %v G: %v B: %v H: %v S: %v L: %v\n", uint8(redNormalized * math.MaxUint16), uint8(greenNormailzed * math.MaxUint16), uint8(blueNormalized * math.MaxUint16), h, s, l)
 	
 	return h,s,l//HSL{H, S, L}
 }
 
-func hslToRGB(h, s, l float64) (uint8, uint8, uint8) {
+func hslToRGB(h, s, l float64) (uint16, uint16, uint16) {
 	// H, S, L, _ := c.RGBA()
 
 	// h := float64(H) / float64(math.MaxUint32)
@@ -118,13 +123,13 @@ func hslToRGB(h, s, l float64) (uint8, uint8, uint8) {
 		b = hueToRGB(p, q, h - (1.0 / 3.0))
 	}
 
-	R := uint8(r * math.MaxUint8)
-	G := uint8(g * math.MaxUint8)
-	B := uint8(b * math.MaxUint8)
+	R := uint16(r * math.MaxUint16)
+	G := uint16(g * math.MaxUint16)
+	B := uint16(b * math.MaxUint16)
 
 	// fmt.Printf("HSLTORGB - R: %v G: %v B: %v H: %v S: %v L: %v\n\n", R, G, B, h, s, l)
 
-	return R, G, B //color.RGBA{R, G, B, math.MaxUint8}
+	return R, G, B //color.RGBA{R, G, B, math.MaxUint16}
 }
 
 func hueToRGB(p, q, t float64) float64 {
@@ -169,10 +174,14 @@ type ExtractBlueChannelFilter struct {
 type SobelImageFilter struct {
 }
 
+type ConvertToGrayscale struct {
+}
+
 func (f HistogramEqualizationFilter) Apply(img image.Image) image.Image {
 	normalizedImage := image.NewRGBA(img.Bounds())
-
-	var histogram [256]uint
+    
+    const arraySize = math.MaxUint16 + 1
+	var histogram [arraySize]uint
 
 	// Convert image to HSL color space and generate the histogram
 	b := img.Bounds()
@@ -180,30 +189,30 @@ func (f HistogramEqualizationFilter) Apply(img image.Image) image.Image {
 		for x := b.Min.X; x < b.Max.X; x++ {
 			r, g, b, _ := img.At(x, y).RGBA()
 			_, _, L := rgbToHSL(r, g, b)
-			newL := uint8(L * float64(math.MaxUint8))
+			newL := uint16(L * float64(math.MaxUint16))
 			histogram[newL]++
 			// fmt.Printf("H: %v S: %v L: %v\n", H, S, L)
 		}
 	}
 	fmt.Println("Histogram calculated")
 
-	var normailzedChannel [256]float64
+	var normailzedChannel [arraySize]float64
 	totalPixels := b.Max.X * b.Max.Y
 
-	for i := 0; i < 256; i++ {
+	for i := 0; i < arraySize; i++ {
 		normailzedChannel[i] = float64(histogram[i]) / float64(totalPixels)
 	}
 
-	var newHistogram [256]float64
-	for i := 0; i < 256; i++ {
+	var newHistogram [arraySize]float64
+	for i := 0; i < arraySize; i++ {
 		for j := 0; j <= i; j++ {
 			newHistogram[i] += normailzedChannel[j]
 		}
 	}
 
-	var newValues [256]uint8
-	for i := 0; i < 256; i++ {
-		newValues[i] = uint8((newHistogram[i] * math.MaxUint8) + 0.5)
+	var newValues [arraySize]uint16
+	for i := 0; i < arraySize; i++ {
+		newValues[i] = uint16((newHistogram[i] * arraySize) + 0.5)
 		// fmt.Printf("Value: %v OldHist: %v NewHist: %v normailzedChannel: %v\n", i, histogram[i], newHistogram[i], normailzedChannel[i])
 	}
 
@@ -211,10 +220,10 @@ func (f HistogramEqualizationFilter) Apply(img image.Image) image.Image {
 		for x := b.Min.X; x < b.Max.X; x++ {
 			r, g, b, _ := img.At(x, y).RGBA()
 			H, S, L := rgbToHSL(r, g, b)
-			newL := uint8(L * float64(math.MaxUint8))
-			L = (float64(newValues[newL]) / float64(math.MaxUint8))
+			newL := uint16(L * float64(math.MaxUint16))
+			L = (float64(newValues[newL]) / float64(math.MaxUint16))
 			R, G, B := hslToRGB(H, S, L)
-			normalizedImage.Set(x, y, color.RGBA{R, G, B, math.MaxUint8}) 
+			normalizedImage.Set(x, y, color.RGBA64{R, G, B, math.MaxUint16}) 
 		}
 	}
 
@@ -229,7 +238,7 @@ func (f ExtractRedChannelFilter) Apply(img image.Image) image.Image {
 		for x := b.Min.X; x < b.Max.X; x++ {
 			r, _, _, _ := img.At(x, y).RGBA()
 
-			redChannel.Set(x, y, color.RGBA{uint8(r), 0, 0, math.MaxUint8})
+			redChannel.Set(x, y, color.RGBA64{convertUint32ToUint16(r), 0, 0, math.MaxUint16})
 		}
 	}
 
@@ -244,7 +253,7 @@ func (f ExtractGreenChannelFilter) Apply(img image.Image) image.Image {
 		for x := b.Min.X; x < b.Max.X; x++ {
 			_, g, _, _ := img.At(x, y).RGBA()
 
-			greenChannel.Set(x, y, color.RGBA{0, uint8(g), 0, math.MaxUint8})
+			greenChannel.Set(x, y, color.RGBA64{0, convertUint32ToUint16(g), 0, math.MaxUint16})
 		}
 	}
 
@@ -259,7 +268,7 @@ func (f ExtractBlueChannelFilter) Apply(img image.Image) image.Image {
 		for x := b.Min.X; x < b.Max.X; x++ {
 			_, _, blue, _ := img.At(x, y).RGBA()
 
-			blueChannel.Set(x, y, color.RGBA{0, 0, uint8(blue), math.MaxUint8})
+			blueChannel.Set(x, y, color.RGBA64{0, 0, convertUint32ToUint16(blue), math.MaxUint16})
 		}
 	}
 
@@ -268,4 +277,21 @@ func (f ExtractBlueChannelFilter) Apply(img image.Image) image.Image {
 
 func (f SobelImageFilter) Apply(img image.Image) image.Image {
 	return img
+}
+
+func (f ConvertToGrayscale) Apply(img image.Image) image.Image {
+    grayscaleImage := image.NewRGBA(img.Bounds())
+    
+    bounds := img.Bounds()
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			red, green, blue, _ := img.At(x, y).RGBA()
+            _, _, L := rgbToHSL(red, green, blue)
+			r, g, b := hslToRGB(0.0, 0.0, L)
+            
+            grayscaleImage.Set(x, y, color.RGBA64{r, g, b, math.MaxUint16})
+		}
+	}
+    
+    return grayscaleImage
 }
